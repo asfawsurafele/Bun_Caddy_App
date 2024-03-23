@@ -18,9 +18,8 @@
 
 
 
-3. **Ansible Setup:**
+3. **Access the Website:**
 
-Access the Website:
 Open your web browser.
 Enter the DNS of the instances in the address bar.
 Press Enter.
