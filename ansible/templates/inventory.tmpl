@@ -1,0 +1,4 @@
+[backend]
+%{ for ip in backend_ips ~}
+${ip.ip}  ansible_user=${ip.ansible_user}
+%{ endfor ~}

@@ -1,0 +1,109 @@
+---
+- name: create bun user and install packages
+  hosts: backend
+  tasks:
+    - name: Create user 'bun' # Create 'bun' user and install required packages
+      become: true
+      user:
+        name: bun
+        state: present
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Install unzip # Install unzip for file extraction
+      become: true
+      apt:
+        name: unzip
+        state: present
+
+    - name: Install ACL # Install ACL for file permissions
+      become: true
+      apt:
+        name: acl
+        state: present
+    
+    - name: Install Caddy # Install Caddy web server
+      become_user: bun
+      shell: |
+        sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+        sudo apt update
+        sudo apt install caddy
+
+    - name: Install bun # Install bun package manager
+      become: yes
+      become_user: bun
+      shell:
+        cmd: "curl -fsSL https://bun.sh/install | bash" # unzip needed here
+      args:
+        chdir: /home/bun/
+  
+# Prepare backend servers by transferring application files and configuring services
+- name: Prepare backend servers
+  hosts: backend
+  become: true
+
+  tasks:
+    - name: Transfer application files # Transfer application files to 'bun' user's directory
+      ansible.builtin.copy:
+        src: "4640-assignment-app-files/bun-htmx-4640/"
+        dest: /home/bun/bun-htmx-4640/
+      become_user: bun
+      become: yes
+
+    - name: Transfer service file # Transfer service file to systemd directory
+      ansible.builtin.copy:
+        src: "4640-assignment-app-files/bun-4640-project.service"
+        dest: /etc/systemd/system/bun-4640.service
+      become_user: root
+
+    - name: Transfer Caddyfile # Transfer Caddy configuration file
+      ansible.builtin.copy:
+        src: "4640-assignment-app-files/Caddyfile"
+        dest: /etc/caddy/Caddyfile
+      become_user: root
+    
+    - name: Reload systemd daemon
+      ansible.builtin.systemd_service:
+        daemon_reload: yes
+
+# Change directory ownership, run 'bun install', and restart services
+- name: Change directory ownership, run bun install in application directory, and restart services.
+  hosts: backend
+  become_user: bun
+
+  tasks:    
+    - name: Change ownership of the application directory to 'bun' # Ensure ownership of application directory
+      file:
+        path: "/home/bun/bun-htmx-4640/"
+        state: directory
+        owner: bun
+        group: bun
+        recurse: yes
+        mode: '0755'
+      become: yes
+
+    - name: Run 'bun install' # Run 'bun install' to install dependencies
+      become: yes
+      become_user: bun
+      shell: /home/bun/.bun/bin/bun install
+      environment:
+        PATH: /home/bun/.bun/bin/bun:{{ ansible_env.PATH }}
+      args:
+        chdir: /home/bun/bun-htmx-4640/   # Change directory to the location where 'bun install' should be executed
+    
+    - name: Restart caddy service # Restart Caddy web server
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: caddy
+        state: restarted
+
+    - name: Start and enable bun service # Restart bun service
+      become: true
+      become_user: root
+      ansible.builtin.systemd_service:
+        name: bun-4640
+        state: restarted
+
